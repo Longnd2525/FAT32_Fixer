@@ -1,0 +1,6 @@
+--How to install and run the program--
+- install typescript
+- install react
+- install tailwindcss
+- type: npm run dev
+- click in the localhost link
