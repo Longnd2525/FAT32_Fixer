@@ -30,6 +30,46 @@ const FAT32PartitionTool = () => {
     sectorsPerCluster: number;
     bytesPerSector: number;
   };
+
+  const simulateAndRepair = async () => {
+    if (!diskImage) {
+      addLog("Không có disk image để mô phỏng!", "error");
+      return;
+    }
+    if (errorType === "none") {
+      addLog("Vui lòng chọn loại lỗi trước khi mô phỏng.", "error");
+      return;
+    }
+
+    addLog(`Bắt đầu mô phỏng lỗi: ${errorType}`, "info");
+    // Gây lỗi ngay lập tức
+    corruptPartitionTable();
+
+    // Đợi một chút cho state cập nhật
+    await new Promise((r) => setTimeout(r, 150));
+
+    addLog("Bắt đầu quá trình khắc phục tự động...", "info");
+    repairPartitionTable();
+
+    // Đợi kết quả khắc phục
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Kiểm tra MBR signature và partitionInfo để xác nhận
+    if (mbrData && mbrData[510] === 0x55 && mbrData[511] === 0xaa) {
+      addLog("Kiểm tra: MBR signature hợp lệ sau khắc phục.", "success");
+    } else {
+      addLog("Kiểm tra: MBR signature KHÔNG hợp lệ sau khắc phục.", "error");
+    }
+
+    if (partitionInfo) {
+      addLog("Kiểm tra: Đã phát hiện Partition info sau khắc phục.", "success");
+    } else {
+      addLog(
+        "Kiểm tra: Không tìm thấy Partition info sau khắc phục.",
+        "warning"
+      );
+    }
+  };
   const [bootSectors, setBootSectors] = useState<BootSectorInfo[]>([]);
   const [externalFileName, setExternalFileName] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<string>("none");
@@ -42,6 +82,15 @@ const FAT32PartitionTool = () => {
       ...prev,
       { message, type, time: new Date().toLocaleTimeString() },
     ]);
+  };
+
+  // Compute an appropriate export filename. If the user loaded a file, preserve its name/extension.
+  const getExportFileName = () => {
+    if (externalFileName) {
+      return externalFileName;
+    }
+    // default filename
+    return "fat32_disk.img";
   };
 
   const createVirtualDisk = (withBackup: boolean) => {
@@ -139,7 +188,11 @@ const FAT32PartitionTool = () => {
     if (withBackup) {
       const backupMbrOffset = (diskSize / 512 - 1) * 512;
       disk.set(mbr, backupMbrOffset);
-      setBackupMbr(new Uint8Array(mbr));
+
+      // SỬA LỖI: Sao chép an toàn
+      const safeMbr = new Uint8Array(mbr);
+
+      setBackupMbr(safeMbr);
       setHasBackup(true);
       addLog(
         "Đã tạo ổ đĩa với BACKUP MBR (giả lập công cụ partition)",
@@ -151,8 +204,13 @@ const FAT32PartitionTool = () => {
       addLog("Đã tạo ổ đĩa KHÔNG CÓ backup MBR (như thực tế)", "success");
     }
 
-    setDiskImage(disk);
-    setMbrData(mbr);
+    // SỬA LỖI: Sao chép an toàn
+    const safeDisk = new Uint8Array(disk);
+    setDiskImage(safeDisk);
+
+    // SỬA LỖI: Sao chép an toàn
+    const safeMbrData = new Uint8Array(mbr);
+    setMbrData(safeMbrData);
 
     // Lưu thông tin boot sector để có thể tái tạo
     setBootSectors([
@@ -183,34 +241,81 @@ const FAT32PartitionTool = () => {
 
   const loadExternalDisk = async (file: File | null) => {
     if (!file) return;
-    addLog(`Loading external disk image: ${file.name}`, "info");
+    addLog(
+      `Loading external disk image: ${file.name} (${file.size} bytes)`,
+      "info"
+    );
     try {
       const buffer = await file.arrayBuffer();
+      addLog(`File arrayBuffer received: ${buffer.byteLength} bytes`, "info");
+
+      if (buffer.byteLength === 0) {
+        addLog("Error: File is empty!", "error");
+        return;
+      }
+
+      // SỬA LỖI: Sao chép an toàn
       const arr = new Uint8Array(buffer);
-      setDiskImage(arr);
-      setMbrData(arr.slice(0, 512));
+      const safeCopy = new Uint8Array(arr); // Đây là bản sao an toàn, độc lập
+
+      // Validate MBR signature in loaded file
+      const mbrSig = `${safeCopy[510]
+        ?.toString(16)
+        .padStart(2, "0")}${safeCopy[511]?.toString(16).padStart(2, "0")}`;
+      addLog(`MBR Signature in file: 0x${mbrSig}`, "info");
+
+      // Calculate and display checksum
+      const checksumLoaded = calculateChecksum(safeCopy);
+      addLog(`Loaded file checksum: 0x${checksumLoaded.toString(16)}`, "info");
+
+      // Check if it looks like valid disk image
+      if (safeCopy.length < 1024) {
+        addLog(
+          `Warning: File is very small (${safeCopy.length} bytes)`,
+          "warning"
+        );
+      }
+
+      // Check for common patterns
+      if (safeCopy[510] !== 0x55 || safeCopy[511] !== 0xaa) {
+        addLog(
+          `Warning: Invalid MBR signature! Got 0x${mbrSig}, expected 0x55aa`,
+          "warning"
+        );
+      }
+
+      setDiskImage(safeCopy); // Set state với bản sao an toàn
+
+      // SỬA LỖI: Sao chép an toàn (dùng slice)
+      const mbrCopy = safeCopy.slice(0, 512);
+
+      setMbrData(mbrCopy);
       setBackupMbr(null);
       setHasBackup(false);
       setBootSectors([]);
       setExternalFileName(file.name);
-      addLog(`Loaded ${file.name} (${arr.length} bytes)`, "success");
+      addLog(`✓ Loaded ${file.name} (${safeCopy.length} bytes)`, "success");
 
       // If sector 0 looks like an MBR, populate partitionInfo
-      if (arr.length >= 512 && arr[510] === 0x55 && arr[511] === 0xaa) {
+      if (
+        safeCopy.length >= 512 &&
+        safeCopy[510] === 0x55 &&
+        safeCopy[511] === 0xaa
+      ) {
         const numSectors =
-          arr[0x1be + 12] |
-          (arr[0x1be + 13] << 8) |
-          (arr[0x1be + 14] << 16) |
-          (arr[0x1be + 15] << 24);
+          safeCopy[0x1be + 12] |
+          (safeCopy[0x1be + 13] << 8) |
+          (safeCopy[0x1be + 14] << 16) |
+          (safeCopy[0x1be + 15] << 24);
 
         const info = {
-          bootable: arr[0x1be] === 0x80,
-          partitionType: arr[0x1be + 4],
+          bootable: safeCopy[0x1be] === 0x80,
+          partitionType: safeCopy[0x1be + 4],
           lbaStart:
-            arr[0x1be + 8] |
-            (arr[0x1be + 9] << 8) |
-            (arr[0x1be + 10] << 16) |
-            (arr[0x1be + 11] << 24),
+            safeCopy[0x1be + 8] |
+            (safeCopy[0x1be + 9] << 8) |
+            (safeCopy[0x1be + 10] << 16) |
+            (safeCopy[0x1be + 11] << 24),
           numSectors: numSectors,
           sizeInMB: (numSectors * 512) / (1024 * 1024),
         };
@@ -243,7 +348,8 @@ const FAT32PartitionTool = () => {
       return;
     }
 
-    const corrupted = mbrData!.slice();
+    // SỬA LỖI: Sao chép an toàn
+    const corrupted = new Uint8Array(mbrData); // Bắt đầu bằng MBR hiện tại
 
     switch (errorType) {
       case "wrong_lba":
@@ -276,8 +382,9 @@ const FAT32PartitionTool = () => {
         return;
     }
 
-    const newDisk = diskImage!.slice();
-    newDisk.set(corrupted, 0);
+    // SỬA LỖI: Sao chép an toàn
+    const newDisk = new Uint8Array(diskImage);
+    newDisk.set(corrupted, 0); // Ghi đè MBR hỏng lên bản sao
     setDiskImage(newDisk);
     setMbrData(corrupted);
     setPartitionInfo(null);
@@ -309,11 +416,15 @@ const FAT32PartitionTool = () => {
 
     for (const offset of sectorsToScan) {
       if (offset < 0 || offset + 512 > diskSize) continue;
+
+      // SỬA LỖI: Sao chép an toàn (dùng slice)
       const sector = diskImage.slice(offset, offset + 512);
+
       if (sector[510] === 0x55 && sector[511] === 0xaa) {
         const bootFlag = sector[0x1be];
         const partType = sector[0x1be + 4];
         if ((bootFlag === 0x00 || bootFlag === 0x80) && partType !== 0x00) {
+          // 'sector' đã là một bản sao độc lập
           foundBackup = sector;
           foundAt = Math.floor(offset / 512);
           addLog(`✓ Tìm thấy backup MBR tại sector ${foundAt}`, "success");
@@ -357,6 +468,7 @@ const FAT32PartitionTool = () => {
       const offset = sector * 512;
       if (offset + 512 > diskSize) continue;
 
+      // SỬA LỖI: Sao chép an toàn (dùng slice)
       const data = diskImage.slice(offset, offset + 512);
 
       // Kiểm tra signature
@@ -498,11 +610,11 @@ const FAT32PartitionTool = () => {
     newMbr[510] = 0x55;
     newMbr[511] = 0xaa;
 
-    // Apply to disk
-    const newDisk = diskImage!.slice();
+    // Apply to disk - SỬA LỖI: Sao chép an toàn
+    const newDisk = new Uint8Array(diskImage!);
     newDisk.set(newMbr, 0);
     setDiskImage(newDisk);
-    setMbrData(newMbr);
+    setMbrData(newMbr); // newMbr đã là mảng mới, an toàn để set
 
     // Update partition info
     if (bootSectors.length > 0) {
@@ -534,10 +646,14 @@ const FAT32PartitionTool = () => {
 
     if (backup) {
       addLog("Sử dụng phương pháp 1: Restore từ backup MBR", "success");
-      const restoredDisk = diskImage!.slice();
+      // SỬA LỖI: Sao chép an toàn
+      const restoredDisk = new Uint8Array(diskImage!);
       restoredDisk.set(backup.data, 0);
       setDiskImage(restoredDisk);
-      setMbrData(new Uint8Array(backup.data));
+
+      // SỬA LỖI: Sao chép an toàn
+      const mbrCopy = new Uint8Array(backup.data);
+      setMbrData(mbrCopy);
 
       const numSectors =
         backup.data[0x1be + 12] |
@@ -567,23 +683,71 @@ const FAT32PartitionTool = () => {
     reconstructMbrFromBootSector();
   };
 
+  const calculateChecksum = (data: Uint8Array): number => {
+    let checksum = 0;
+    // Tính checksum trên 1024 byte đầu tiên
+    for (let i = 0; i < Math.min(1024, data.length); i++) {
+      checksum = (checksum + data[i]) & 0xffffffff;
+    }
+    return checksum;
+  };
+
   const exportDiskImage = () => {
     if (!diskImage) {
       addLog("Chưa có disk image để export!", "error");
       return;
     }
 
-    // Use ArrayBuffer as Blob part to satisfy TypeScript types
-    const blob = new Blob([diskImage!.slice().buffer], {
-      type: "application/octet-stream",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "fat32_disk.img";
-    a.click();
-    URL.revokeObjectURL(url);
-    addLog("Đã export disk image", "success");
+    try {
+      addLog(`Exporting disk: size=${diskImage.length} bytes`, "info");
+
+      if (diskImage.length === 0) {
+        addLog("Error: diskImage is empty!", "error");
+        return;
+      }
+
+      // 1. Kiểm tra Checksum trước khi export
+      const checksumBefore = calculateChecksum(diskImage);
+      addLog(`Pre-export checksum: 0x${checksumBefore.toString(16)}`, "info");
+      addLog(
+        `Pre-export MBR signature: 0x${diskImage[510]
+          ?.toString(16)
+          .padStart(2, "0")}${diskImage[511]?.toString(16).padStart(2, "0")}`,
+        "info"
+      );
+
+      // 2. Tạo Blob (cách tối ưu)
+      // Create an ArrayBuffer copy and pass that to Blob to satisfy TS and avoid SharedArrayBuffer typing issues
+      const ab = diskImage.slice().buffer as unknown as ArrayBuffer;
+      const blob = new Blob([ab], {
+        type: "application/octet-stream",
+      });
+
+      if (blob.size !== diskImage.length) {
+        addLog(
+          `⚠️ Warning: Blob size (${blob.size}) doesn't match original (${diskImage.length})`,
+          "warning"
+        );
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      // Preserve loaded filename/extension if available (so .vhd exports remain .vhd)
+      a.download = getExportFileName();
+
+      // 3. SỬA LỖI: Thêm vào DOM để đảm bảo hoạt động
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // 4. SỬA LỖI: Sửa lỗi typo và giữ thời gian chờ an toàn
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+      addLog(`✓ Exported ${blob.size} bytes successfully`, "success");
+    } catch (err) {
+      addLog(`✗ Export failed: ${err}`, "error");
+    }
   };
 
   const getHexDump = (
@@ -592,6 +756,7 @@ const FAT32PartitionTool = () => {
     length: number
   ): string => {
     if (!data) return "";
+    // Slice cũng tạo ra bản sao an toàn
     const slice = data.slice(offset, offset + length);
     let dump = "";
     for (let i = 0; i < slice.length; i += 16) {
@@ -635,7 +800,7 @@ const FAT32PartitionTool = () => {
               <div className="space-y-3">
                 <input
                   type="file"
-                  accept=".img,.bin,application/octet-stream,*/*"
+                  accept=".img,.bin,.vhd,.vhdx,application/octet-stream,*/*"
                   onChange={onExternalFileChange}
                   className="block w-full text-sm text-slate-200 file:bg-slate-700 file:text-white file:py-2 file:px-3 file:rounded-md"
                 />
@@ -728,6 +893,16 @@ const FAT32PartitionTool = () => {
                   className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors"
                 >
                   Gây lỗi Partition Table
+                </button>
+                <button
+                  onClick={simulateAndRepair}
+                  disabled={!diskImage || errorType === "none"}
+                  className="w-full mt-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Mô phỏng & Khắc phục
+                  <div className="text-xs opacity-75 mt-1">
+                    (Gây lỗi rồi thử khôi phục tự động)
+                  </div>
                 </button>
               </div>
             </div>
