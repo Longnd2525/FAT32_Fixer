@@ -1,6 +1,7 @@
 --How to install and run the program--
-- install typescript
-- install react
-- install tailwindcss
-- type: npm run dev
-- click in the localhost link
+- Install typescript
+- Install react
+- Install tailwindcss
+- Cmd: npm run dev
+- Click in the localhost link
+- When using the Recover function, to make sure that the volume is fully recovered, click the function button more than one time. Because the first time the function is used, it will prior the scenario that the volume has Backup MBR, so the result might be none.

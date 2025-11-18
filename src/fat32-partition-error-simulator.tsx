@@ -31,45 +31,6 @@ const FAT32PartitionTool = () => {
     bytesPerSector: number;
   };
 
-  const simulateAndRepair = async () => {
-    if (!diskImage) {
-      addLog("Không có disk image để mô phỏng!", "error");
-      return;
-    }
-    if (errorType === "none") {
-      addLog("Vui lòng chọn loại lỗi trước khi mô phỏng.", "error");
-      return;
-    }
-
-    addLog(`Bắt đầu mô phỏng lỗi: ${errorType}`, "info");
-    // Gây lỗi ngay lập tức
-    corruptPartitionTable();
-
-    // Đợi một chút cho state cập nhật
-    await new Promise((r) => setTimeout(r, 150));
-
-    addLog("Bắt đầu quá trình khắc phục tự động...", "info");
-    repairPartitionTable();
-
-    // Đợi kết quả khắc phục
-    await new Promise((r) => setTimeout(r, 200));
-
-    // Kiểm tra MBR signature và partitionInfo để xác nhận
-    if (mbrData && mbrData[510] === 0x55 && mbrData[511] === 0xaa) {
-      addLog("Kiểm tra: MBR signature hợp lệ sau khắc phục.", "success");
-    } else {
-      addLog("Kiểm tra: MBR signature KHÔNG hợp lệ sau khắc phục.", "error");
-    }
-
-    if (partitionInfo) {
-      addLog("Kiểm tra: Đã phát hiện Partition info sau khắc phục.", "success");
-    } else {
-      addLog(
-        "Kiểm tra: Không tìm thấy Partition info sau khắc phục.",
-        "warning"
-      );
-    }
-  };
   const [bootSectors, setBootSectors] = useState<BootSectorInfo[]>([]);
   const [externalFileName, setExternalFileName] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<string>("none");
@@ -342,10 +303,10 @@ const FAT32PartitionTool = () => {
     if (f) loadExternalDisk(f);
   };
 
-  const corruptPartitionTable = () => {
+  const corruptPartitionTable = (): Uint8Array | null => {
     if (!diskImage || !mbrData) {
       addLog("Chưa tạo ổ đĩa ảo!", "error");
-      return;
+      return null;
     }
 
     // SỬA LỖI: Sao chép an toàn
@@ -379,7 +340,7 @@ const FAT32PartitionTool = () => {
         break;
       default:
         addLog("Chọn loại lỗi để gây lỗi", "error");
-        return;
+        return null;
     }
 
     // SỬA LỖI: Sao chép an toàn
@@ -392,6 +353,7 @@ const FAT32PartitionTool = () => {
       "MBR đã bị hỏng - hệ thống sẽ không nhận diện được phân vùng",
       "error"
     );
+    return corrupted;
   };
 
   const searchBackupMbr = () => {
@@ -893,16 +855,6 @@ const FAT32PartitionTool = () => {
                   className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors"
                 >
                   Gây lỗi Partition Table
-                </button>
-                <button
-                  onClick={simulateAndRepair}
-                  disabled={!diskImage || errorType === "none"}
-                  className="w-full mt-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Mô phỏng & Khắc phục
-                  <div className="text-xs opacity-75 mt-1">
-                    (Gây lỗi rồi thử khôi phục tự động)
-                  </div>
                 </button>
               </div>
             </div>
