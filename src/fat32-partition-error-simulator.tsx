@@ -747,9 +747,6 @@ const FAT32PartitionTool = () => {
               FAT32 Partition Error Simulator & Recovery
             </h1>
           </div>
-          <p className="text-slate-300">
-            Công cụ mô phỏng thực tế - phục hồi CÓ và KHÔNG CÓ backup MBR
-          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -792,9 +789,6 @@ const FAT32PartitionTool = () => {
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors text-sm"
                 >
                   ✓ Tạo ổ đĩa CÓ backup MBR
-                  <div className="text-xs opacity-75 mt-1">
-                    (Giả lập: dùng công cụ partition)
-                  </div>
                 </button>
 
                 <button
@@ -802,9 +796,6 @@ const FAT32PartitionTool = () => {
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors text-sm"
                 >
                   ✗ Tạo ổ đĩa KHÔNG backup MBR
-                  <div className="text-xs opacity-75 mt-1">
-                    (Thực tế: format thông thường)
-                  </div>
                 </button>
 
                 <div className="pt-3 border-t border-slate-600">
@@ -1030,102 +1021,6 @@ const FAT32PartitionTool = () => {
                 )}
               </div>
             </div>
-          </div>
-        </div>
-
-        <div className="mt-6 bg-slate-800/50 backdrop-blur rounded-xl p-6 border border-slate-700">
-          <h2 className="text-2xl font-bold mb-4">
-            📚 Phân tích: Khi nào có/không có Backup MBR?
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4">
-              <h3 className="text-lg font-semibold mb-3 text-green-400">
-                ✓ CÓ Backup MBR
-              </h3>
-              <ul className="space-y-2 text-sm text-slate-300">
-                <li>
-                  <strong>•</strong> Dùng công cụ Partition Manager (Norton,
-                  EaseUS, Acronis)
-                </li>
-                <li>
-                  <strong>•</strong> Hệ thống GPT (có backup GPT header)
-                </li>
-                <li>
-                  <strong>•</strong> Một số BIOS/UEFI có cache
-                </li>
-                <li>
-                  <strong>•</strong> Linux LVM hoặc RAID (metadata riêng)
-                </li>
-                <li>
-                  <strong>•</strong> Tự tạo backup thủ công (dd command)
-                </li>
-              </ul>
-            </div>
-
-            <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-4">
-              <h3 className="text-lg font-semibold mb-3 text-red-400">
-                ✗ KHÔNG CÓ Backup MBR
-              </h3>
-              <ul className="space-y-2 text-sm text-slate-300">
-                <li>
-                  <strong>•</strong> Format chuẩn Windows (format, Disk
-                  Management)
-                </li>
-                <li>
-                  <strong>•</strong> Format trên Linux (mkfs, fdisk, parted)
-                </li>
-                <li>
-                  <strong>•</strong> USB Flash/SD Card mới mua
-                </li>
-                <li>
-                  <strong>•</strong> Đĩa được Ghost/Clone (nếu nguồn không có)
-                </li>
-                <li>
-                  <strong>•</strong> Malware phá cả backup (nếu tìm được)
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-6 p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg">
-            <h3 className="text-lg font-semibold mb-3 text-blue-400 flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" />
-              Quy trình khắc phục khi KHÔNG có backup:
-            </h3>
-            <ol className="space-y-2 text-sm text-slate-300">
-              <li>
-                <strong>1. Quét tìm Boot Sector:</strong> Tìm signature 0x55AA,
-                jump code (EB/E9), OEM ID
-              </li>
-              <li>
-                <strong>2. Phân tích Boot Sector:</strong> Lấy LBA start, total
-                sectors, filesystem type
-              </li>
-              <li>
-                <strong>3. Tái tạo MBR:</strong> Xây dựng partition table từ
-                thông tin Boot Sector
-              </li>
-              <li>
-                <strong>4. Verify:</strong> Kiểm tra tính hợp lệ trước khi ghi
-              </li>
-              <li>
-                <strong>5. Restore:</strong> Ghi MBR mới vào sector 0
-              </li>
-            </ol>
-          </div>
-
-          <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-700/50 rounded-lg">
-            <h3 className="text-lg font-semibold mb-2 text-yellow-400">
-              ⚠️ Lưu ý quan trọng:
-            </h3>
-            <p className="text-sm text-slate-300">
-              Trong <strong>ĐA SỐ trường hợp thực tế</strong>, ổ đĩa{" "}
-              <strong>KHÔNG có backup MBR tự động</strong>. Phương pháp tái tạo
-              từ Boot Sector là kỹ thuật chính được sử dụng bởi TestDisk và các
-              công cụ data recovery chuyên nghiệp. Luôn tạo backup thủ công (dd)
-              trước khi thực hiện partition operations!
-            </p>
           </div>
         </div>
       </div>
